@@ -154,7 +154,6 @@ public abstract class BaseComputeServiceContextModule extends AbstractModule {
          checkNotNull(node, "node");
          checkNotNull(script, "script");
          checkNotNull(options, "options");
-         options.shouldWrapInInitScript();
          return factory.backgroundAndBlockOnComplete(node, script, options).init().future();
       }
    }
