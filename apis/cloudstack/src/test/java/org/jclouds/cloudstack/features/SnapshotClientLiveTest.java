@@ -118,7 +118,7 @@ public class SnapshotClientLiveTest extends BaseCloudStackClientLiveTest {
       throw new AssertionError("No suitable Volume found.");
    }
 
-   public void testCreateSnapshotFromVolume() {
+   public void testCreateSnapshotFromVolumeAndDelete() {
       final Volume volume = getPreferredVolume();  //fail fast if none
 
       Snapshot snapshot = Retryables.retryGettingResultOrFailing(new PredicateCallable<Snapshot>() {
@@ -134,7 +134,8 @@ public class SnapshotClientLiveTest extends BaseCloudStackClientLiveTest {
       }, null, 60*1000, "failed to create snapshot");
       logger.info("created snapshot %s from volume %s", snapshot, volume);
       checkSnapshot(snapshot);
-      client.getSnapshotClient().deleteSnapshot(snapshot.getId());
+      AsyncCreateResponse job = client.getSnapshotClient().deleteSnapshot(snapshot.getId());
+      assertTrue(jobComplete.apply(job.getJobId()));
    }
 
    private void checkSnapshot(final Snapshot snapshot) {

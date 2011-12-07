@@ -166,7 +166,8 @@ public class VolumeClientLiveTest extends BaseCloudStackClientLiveTest {
       logger.info("testCreateVolumeFromDiskofferingInZoneAndDeleteVolume");
       Volume volume = createPreferredVolumeFromDisk();
       checkVolume(volume);
-      client.getVolumeClient().deleteVolume(volume.getId());
+      AsyncCreateResponse job = client.getVolumeClient().deleteVolume(volume.getId());
+      assertTrue(jobComplete.apply(job.getJobId()));
    }
 
    /** test requires that a VM exist */

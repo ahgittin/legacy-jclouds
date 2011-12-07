@@ -75,8 +75,9 @@ public interface VolumeClient {
     * Deletes a attached disk volume
     *
     * @param id id of the volume
+    * @return AsyncCreateResponse job response used to track deletion
     */
-   void deleteVolume(long id);
+   AsyncCreateResponse deleteVolume(long id);
 
    /**
     * Attaches a disk volume to a virtual machine.

@@ -100,16 +100,13 @@ public interface SnapshotAsyncClient {
    ListenableFuture<Snapshot> getSnapshot(@QueryParam("id") long id);
 
    /**
-    * Deletes a snapshot of a disk volume.
-    *
-    * @param id The ID of the snapshot
-    * @return an asynchronous job structure
+    * @see SnapshotClient#deleteSnapshot
     */
    @GET
-   @Consumes(MediaType.APPLICATION_JSON)
    @QueryParams(keys = "command", values = "deleteSnapshot")
-   @ExceptionParser(ReturnVoidOnNotFoundOr404.class)
-   ListenableFuture<Void> deleteSnapshot(@QueryParam("id") long id);
+   @Unwrap
+   @Consumes(MediaType.APPLICATION_JSON)
+   ListenableFuture<AsyncCreateResponse> deleteSnapshot(@QueryParam("id") long id);
 
    /**
     * Creates a snapshot policy for the account.

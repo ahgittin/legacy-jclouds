@@ -72,7 +72,7 @@ public interface SnapshotClient {
     * @param id The ID of the snapshot
     * @return an asynchronous job structure
     */
-   void deleteSnapshot(long id);
+   AsyncCreateResponse deleteSnapshot(long id);
 
    /**
     * Creates a snapshot policy for the account.
