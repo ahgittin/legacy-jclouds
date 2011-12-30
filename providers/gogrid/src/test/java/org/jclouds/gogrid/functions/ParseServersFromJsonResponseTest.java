@@ -101,4 +101,29 @@ public class ParseServersFromJsonResponseTest {
          return bindings;
       }
    });
+   
+   @Test
+   public void testApplyInputStreamDetailsBillingTokenSummary() throws UnknownHostException {
+      InputStream is = getClass().getResourceAsStream("/test_get_server_list_billingtokensummary.json");
+
+      ParseServerListFromJsonResponse parser = i.getInstance(ParseServerListFromJsonResponse.class);
+      SortedSet<Server> response = parser.apply(new HttpResponse(200, "ok", Payloads.newInputStreamPayload(is)));
+
+      Option dc = new Option(1l, "US-West-1", "US West 1 Datacenter");
+      Option centOs = new Option(13L, "CentOS 5.2 (32-bit)", "CentOS 5.2 (32-bit)");
+      Option webServer = new Option(1L, "Web Server", "Web or Application Server");
+      Server server = new Server(75245L, dc, false, "PowerServer", "server to test the api. created by Alex",
+            ServerState.ON, webServer, new Option(1L, "512MB", "Server with 512MB RAM"), centOs, new Ip(1313079L,
+                  "204.51.240.178", "204.51.240.176/255.255.255.240", true, IpState.ASSIGNED, dc), new ServerImage(
+                  1946L, "GSI-f8979644-e646-4711-ad58-d98a5fa3612c", "BitNami Gallery 2.3.1-0",
+                  "http://bitnami.org/stack/gallery", centOs, null, ServerImageType.WEB_APPLICATION_SERVER,
+                  ServerImageState.AVAILABLE, 0.0, "24732/GSI-f8979644-e646-4711-ad58-d98a5fa3612c.img", true, true,
+                  new Date(1261504577971L), new Date(1262649582180L), ImmutableSortedSet.of(new BillingToken(38L,
+                        //only ID is used by the comparator in BillingToken
+                        "ignored", 0.0), new BillingToken(56L, "BitNami: Gallery", 0.0)), new Customer(24732L,
+                        "BitRock")));
+      Server s = Iterables.getOnlyElement(response);
+      assertEquals(s, server);
+   }
+
 }
