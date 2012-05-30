@@ -254,7 +254,7 @@ public class ViComputeServiceAdapter implements ComputeServiceAdapter<VirtualMac
 		try {
 			
 			ManagedEntity[] entities = new InventoryNavigator(
-					client.getRootFolder()).searchManagedEntities("VirtualMachine");
+					client.getRootFolder()).searchManagedEntities("Template");
 			for (ManagedEntity entity : entities) {
 				VirtualMachine vm = (VirtualMachine) entity;
 				images.add(new Image(vm.getConfig().getGuestId(), vm.getConfig().getGuestFullName()));
