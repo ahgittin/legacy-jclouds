@@ -190,5 +190,10 @@
             <artifactId>ninefold-compute</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.jclouds.api</groupId>
+            <artifactId>vi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 </project>

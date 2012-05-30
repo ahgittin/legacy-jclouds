@@ -31,7 +31,8 @@
     <artifactId>jclouds-labs-project</artifactId>
     <packaging>pom</packaging>
     <name>jclouds labs project</name>
-    <modules>
+    <modules>       
+       <module>vi</module>
        <module>openstack-nova</module>
        <module>glesys</module>
        <module>savvis-symphonyvpdc</module>
