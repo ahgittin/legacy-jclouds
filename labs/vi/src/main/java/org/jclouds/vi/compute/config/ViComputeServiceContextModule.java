@@ -20,7 +20,9 @@
 package org.jclouds.vi.compute.config;
 
 import static com.google.common.base.Predicates.notNull;
+import static com.google.common.base.Throwables.propagate;
 import static com.google.common.collect.Iterables.filter;
+import static com.google.common.collect.Iterables.size;
 import static com.google.common.collect.Iterables.transform;
 import static org.jclouds.vi.reference.ViConstants.PROPERTY_VI_XML_NAMESPACE;
 
@@ -40,6 +42,7 @@ import javax.inject.Named;
 import javax.inject.Singleton;
 import javax.ws.rs.core.HttpHeaders;
 
+import com.vmware.vim25.InvalidLogin;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.WildcardFileFilter;
 import org.jclouds.Constants;
@@ -56,6 +59,7 @@ import org.jclouds.io.Payloads;
 import org.jclouds.location.Provider;
 import org.jclouds.rest.HttpClient;
 import org.jclouds.rest.annotations.Credential;
+import org.jclouds.rest.annotations.Endpoint;
 import org.jclouds.rest.annotations.Identity;
 import org.jclouds.vi.Image;
 import org.jclouds.vi.compute.functions.DatacenterToLocation;
@@ -109,72 +113,26 @@ public class ViComputeServiceContextModule
       }).to(DatacenterToLocation.class);
    }
 
-   @Provides
    @Singleton
+   @Provides
    protected ServiceInstance createConnection(
 //            JcloudsWSClient client,
+            @Named(Constants.PROPERTY_ENDPOINT) String endpoint,
             @Identity String identity,
-            @Credential String credential) throws RemoteException,
-/*
-            @Named(Constants.PROPERTY_IDENTITY) String identity,
-            @Named(Constants.PROPERTY_CREDENTIAL) String credential) throws RemoteException,
-*/
-//            @Named(Constants.PROPERTY_TRUST_ALL_CERTS) boolean ignoreCertificate) throws RemoteException,
-            MalformedURLException {
-      // uncomment this to use jclouds http commands
-      // return new ServiceInstance(client, identity, credential, ignoreCertificate);
+            @Credential String credential) throws MalformedURLException, RemoteException {
 
-/*
-      return new ServiceInstance(new WSClient(client.getBaseUrl().toString(), ignoreCertificate), identity, credential,
-               ignoreCertificate + "");
-*/
-      return new ServiceInstance(new URL("https://192.168.134.224/sdk"), identity, credential, true);
-//               ignoreCertificate);
+//               MalformedURLException, URISyntaxException{
 
-   }
-
-/*
-   @Singleton
-   public static class JcloudsWSClient extends WSClient {
-
-      private final HttpClient client;
-
-      @Inject
-      public JcloudsWSClient(HttpClient client, @Provider URI baseUrl,
-               @Named(PROPERTY_VI_XML_NAMESPACE) String vimNameSpace,
-               @Named(Constants.PROPERTY_TRUST_ALL_CERTS) boolean ignoreCert) throws MalformedURLException {
-         super(baseUrl.toASCIIString(), ignoreCert);
-         this.setVimNameSpace(vimNameSpace);
-         this.client = client;
+      ServiceInstance si = null;
+      try {
+         si = new ServiceInstance(URI.create(endpoint).toURL(), identity, credential, true);
+      } catch (Exception ex) {
+         propagate(ex);
       }
 
-      @Override
-      public InputStream post(String soapMsg) throws IOException {
-
-         Builder<String, String> headers = ImmutableMultimap.<String, String> builder();
-         headers.put("SOAPAction", "urn:vim25/4.0");
-         if (getCookie() != null)
-            headers.put(HttpHeaders.COOKIE, getCookie());
-
-         HttpRequest request;
-         try {
-            request = HttpRequest.builder().endpoint(getBaseUrl().toURI()).method("POST").headers(headers.build())
-                     .payload(Payloads.newStringPayload(soapMsg)).build();
-         } catch (URISyntaxException e) {
-            Throwables.propagate(e);
-            return null;// unreachable as the above line will throw the exception.
-         }
-         HttpResponse response = client.invoke(request);
-
-         if (getCookie() != null && response.getFirstHeaderOrNull(HttpHeaders.SET_COOKIE) != null) {
-            setCookie(response.getFirstHeaderOrNull(HttpHeaders.SET_COOKIE));
-         }
-
-         return response.getPayload().getInput();
-      }
+      return si;
 
    }
-*/
 
 /*
    @Override

@@ -42,7 +42,7 @@ import com.google.inject.Module;
 @Test(groups = "live", testName = "vsphere.ViExperimentLiveTest")
 public class ViExperimentLiveTest {
 	
-	protected String provider = "vsphere";
+	protected String provider = "vi";
    protected String identity;
    protected String credential;
    protected String endpoint;

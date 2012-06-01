@@ -19,6 +19,9 @@
 
 package org.jclouds.vi.compute;
 
+import static org.jclouds.Constants.PROPERTY_CREDENTIAL;
+import static org.jclouds.Constants.PROPERTY_ENDPOINT;
+import static org.jclouds.Constants.PROPERTY_IDENTITY;
 import static org.jclouds.vi.reference.ViConstants.PROPERTY_VI_XML_NAMESPACE;
 import static org.jclouds.vi.reference.ViConstants.PROPERTY_VI_IGNORE_CERTIFICATE;
 
@@ -37,6 +40,9 @@ public class ViPropertiesBuilder extends PropertiesBuilder {
    @Override
    protected Properties defaultProperties() {
       Properties properties = super.defaultProperties();
+      properties.setProperty(PROPERTY_ENDPOINT, "https://you_must_set_endpoint/sdk");
+      properties.setProperty(PROPERTY_IDENTITY, "root");
+      properties.setProperty(PROPERTY_CREDENTIAL, "vmware");
       properties.setProperty(PROPERTY_VI_XML_NAMESPACE, ServiceInstance.VIM25_NAMESPACE);
       properties.setProperty(PROPERTY_VI_IGNORE_CERTIFICATE, "true");
       return properties;
