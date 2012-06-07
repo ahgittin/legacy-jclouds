@@ -28,6 +28,7 @@ import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
+import com.google.common.collect.ImmutableSet;
 import org.jclouds.collect.FindResourceInSet;
 import org.jclouds.collect.Memoized;
 import org.jclouds.compute.domain.*;
@@ -39,6 +40,7 @@ import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableMap;
 import com.vmware.vim25.VirtualMachinePowerState;
 import com.vmware.vim25.mo.VirtualMachine;
+import org.jclouds.domain.LoginCredentials;
 
 /**
  * @author Adrian Cole
@@ -88,9 +90,8 @@ public class VirtualMachineToNodeMetadata implements Function<VirtualMachine, No
          builder.hardware(findHardwareForVirtualMachine.apply(from));
 
          builder.state(domainStateToNodeState.get(from.getRuntime().getPowerState()));
-         // builder.publicAddresses(ImmutableSet.<String> of(from.publicAddress));
-         // builder.privateAddresses(ImmutableSet.<String> of(from.privateAddress));
-         builder.credentials(credentialStore.get("node#" + from.getName()));
+         builder.publicAddresses(ImmutableSet.<String> of(from.getGuest().getIpAddress()));
+         builder.credentials(LoginCredentials.fromCredentials(credentialStore.get("node#" + from.getName())));
 
       } catch (Exception e) {
          // TODO Auto-generated catch block

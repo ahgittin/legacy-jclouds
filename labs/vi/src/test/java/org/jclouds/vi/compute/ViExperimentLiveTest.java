@@ -20,16 +20,23 @@
 package org.jclouds.vi.compute;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static org.testng.Assert.assertTrue;
 
+import java.util.Properties;
 import java.util.Set;
 
+import com.google.common.base.Splitter;
+import com.google.common.collect.Iterables;
 import org.jclouds.compute.ComputeServiceContext;
 import org.jclouds.compute.ComputeServiceContextFactory;
-import org.jclouds.compute.domain.Hardware;
-import org.jclouds.compute.domain.Image;
+import org.jclouds.compute.domain.*;
+import org.jclouds.domain.Credentials;
 import org.jclouds.domain.Location;
+import org.jclouds.domain.LoginCredentials;
 import org.jclouds.logging.log4j.config.Log4JLoggingModule;
+import org.testng.annotations.AfterGroups;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.BeforeGroups;
 import org.testng.annotations.Test;
 
 import com.google.common.collect.ImmutableSet;
@@ -47,7 +54,7 @@ public class ViExperimentLiveTest {
    protected String credential;
    protected String endpoint;
    protected String apiversion;
-   
+
    @BeforeClass
    protected void setupCredentials() {
       identity = checkNotNull(System.getProperty("test." + provider + ".identity"), "test." + provider + ".identity");
@@ -56,33 +63,54 @@ public class ViExperimentLiveTest {
       apiversion = System.getProperty("test." + provider + ".apiversion");
    }
 
-   @Test
+   @Test(enabled = false)
    public void testAndExperiment() {
       ComputeServiceContext context = null;
 
       try {
-         context = new ComputeServiceContextFactory().createContext(new ViComputeServiceContextSpec(endpoint, identity,
-                  credential), ImmutableSet.<Module>of(new Log4JLoggingModule()), new ViPropertiesBuilder().build());
 
+
+         Properties restProperties = new Properties();
+         restProperties.setProperty("vi.contextbuilder", ViComputeServiceContextBuilder.class.getName());
+         restProperties.setProperty("vi.propertiesbuilder", ViPropertiesBuilder.class.getName());
+         restProperties.setProperty("vi.endpoint",  "https://192.168.134.224/sdk");
+         restProperties.setProperty("vi.trust-all-certs",  "FALSE");
+
+         context = new ComputeServiceContextFactory(restProperties).createContext("vi",
+               "root", "vmware");
+
+//         context = new ComputeServiceContextFactory().createContext(new ViComputeServiceContextSpec(endpoint, identity,
+//                  credential), ImmutableSet.<Module>of(new Log4JLoggingModule()), new ViPropertiesBuilder().build());
+
+/*
          Set<? extends Location> locations = context.getComputeService().listAssignableLocations();
-         for (Location location : locations) {
-            System.out.println("location id: " + location.getId() + " - desc: " + location.getDescription());
-         }
-         
-         Set<? extends Image> images = context.getComputeService().listImages();
-         for (Image image : images) {
-            System.out.println("id: " + image.getId() + " - name:" + image.getName());
-
-
-         // Set<? extends ComputeMetadata> nodes = context.getComputeService().listNodes();
-         //
          Set<? extends Hardware> hardwares = context.getComputeService().listHardwareProfiles();
-         for (Hardware hardware : hardwares) {
-            System.out.println("hardware id: " + hardware.getId() + " - name: " + hardware.getName());
-         }
-         //         
+         Set<? extends Image> images = context.getComputeService().listImages();
+         Set<? extends ComputeMetadata> nodes = context.getComputeService().listNodes();
 
+         System.out.println("Locations:");
+         for (Location location : locations) {
+            System.out.println("\tid: " + location.getId() + " - desc: " + location.getDescription());
          }
+
+         System.out.println("Images:");
+         for (Image image : images) {
+            System.out.println("\tid: " + image.getId() + " - name:" + image.getName());
+         }
+
+         System.out.println("Nodes:");
+         for (ComputeMetadata node : nodes) {
+            System.out.println("\tid: " + node.getId() + " - name:" + node.getName());
+         }
+
+         System.out.println("Hardware Profiles:");
+         for (Hardware hardware : hardwares) {
+            System.out.println("\tid: " + hardware.getId() + " - name: " + hardware.getName());
+         }
+*/
+
+         //
+
          //
          // NodeMetadata node = context.getComputeService().getNodeMetadata("MyWinServer");
          // System.out.println(node);
@@ -91,19 +119,15 @@ public class ViExperimentLiveTest {
           * We will probably make a default template out of properties at some point You can control
           * the default template via overriding a method in standalonecomputeservicexontextmodule
           */
-         /*
-          * Template defaultTemplate = context.getComputeService().templateBuilder()
-          * .hardwareId("vm-1221").imageId("winNetEnterprise64Guest") //.locationId("") .build();
-          * 
-          * Set<? extends NodeMetadata> nodeMetadataSet =
-          * context.getComputeService().runNodesWithTag("MyWinServer", 1); for (NodeMetadata
-          * nodeMetadata : nodeMetadataSet) {
-          * 
-          * // context.getComputeService().suspendNode(nodeMetadata.getId()); //
-          * context.getComputeService().resumeNode(nodeMetadata.getId());
-          * 
-          * //context.getComputeService().destroyNode(nodeMetadata.getId()); }
-          */
+
+         Template template = context.getComputeService().templateBuilder().imageId("ubuntu1004-jclouds-template").minRam(64).build(); // hardwareId("vm-1221").imageId("winNetEnterprise64Guest") //.locationId("") .build();
+         System.out.println("default: " + template);
+
+         context.getComputeService().createNodesInGroup("vitest", 1, template); //imageId()TemplateOptions.Builder.blockOnComplete(true));
+
+
+
+            //context.getComputeService().destroyNode(nodeMetadata.getId()); }
       } catch (Exception e) {
          e.printStackTrace();
 
@@ -112,5 +136,36 @@ public class ViExperimentLiveTest {
             context.close();
       }
    }
+
+   @Test
+   public void testExistingNode() {
+      ComputeServiceContext context = null;
+
+      try {
+
+         Properties restProperties = new Properties();
+         restProperties.setProperty("vi.contextbuilder", ViComputeServiceContextBuilder.class.getName());
+         restProperties.setProperty("vi.propertiesbuilder", ViPropertiesBuilder.class.getName());
+         restProperties.setProperty("vi.endpoint",  endpoint);
+         restProperties.setProperty("vi.trust-all-certs",  "FALSE");
+
+         context = new ComputeServiceContextFactory(restProperties).createContext("vi",
+               identity, credential);
+
+         for (ComputeMetadata nodemeta : context.getComputeService().listNodes()) {
+            System.out.println(nodemeta);
+         }
+
+//         context.getComputeService().runScriptOnNode("vitest-aa8", "uname -a");
+//         context.getComputeService().destroyNode("vitest-aa8");
+      } catch (Exception e) {
+         e.printStackTrace();
+
+      } finally {
+         if (context != null)
+            context.close();
+      }
+   }
+
 
 }

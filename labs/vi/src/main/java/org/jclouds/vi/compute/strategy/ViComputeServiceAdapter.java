@@ -23,16 +23,16 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.rmi.RemoteException;
 import java.util.List;
-import java.util.Map;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
+import com.google.common.base.Function;
 import org.jclouds.compute.ComputeService;
 import org.jclouds.compute.ComputeServiceAdapter;
+import org.jclouds.compute.domain.Hardware;
+import org.jclouds.compute.domain.Image;
 import org.jclouds.compute.domain.Template;
-import org.jclouds.domain.Credentials;
-import org.jclouds.vi.Image;
 
 import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
@@ -66,381 +66,387 @@ import com.vmware.vim25.mo.ResourcePool;
 import com.vmware.vim25.mo.ServiceInstance;
 import com.vmware.vim25.mo.Task;
 import com.vmware.vim25.mo.VirtualMachine;
+import org.jclouds.domain.LoginCredentials;
 
 /**
  * defines the connection between the {@link VI} implementation and the jclouds
  * {@link ComputeService}
- * 
+ *
  */
 @Singleton
-public class ViComputeServiceAdapter implements ComputeServiceAdapter<VirtualMachine, VirtualMachine, Image, Datacenter> {
+public class ViComputeServiceAdapter implements ComputeServiceAdapter<VirtualMachine, Hardware, Image, Datacenter> {
 
-	private final ServiceInstance client;
-	private String resourcePoolName = "";
-	private String vmwareHostName = "";
-	private String datastoreName = "";
-	private String vmClonedName = "MyWinClone";
+   private final ServiceInstance client;
+   private String resourcePoolName = "";
+   private String vmwareHostName = "";
+   private String datastoreName = "";
+   private String vmClonedName = "MyWinClone";
+   private final Function<VirtualMachine, Image> vmToImage;
+   private final Function<VirtualMachine, Hardware> vmToHardware;
 
-	@Inject
-	public ViComputeServiceAdapter(ServiceInstance client) {
-		this.client = checkNotNull(client, "client");
-	}
+   @Inject
+   public ViComputeServiceAdapter(ServiceInstance client,
+                                  Function<VirtualMachine, Image> vmToImage,
+                                  Function<VirtualMachine, Hardware> vmToHardware) {
+      this.vmToHardware = vmToHardware;
+      this.client = checkNotNull(client, "client");
+      this.vmToImage = vmToImage;
+   }
 
-	@Override
-	public NodeAndInitialCredentials<VirtualMachine> createNodeWithGroupEncodedIntoName(String tag,
+   @Override
+   public NodeAndInitialCredentials<VirtualMachine> createNodeWithGroupEncodedIntoName(String tag,
                                                                                        String name, Template template) {
-		try {
-			Folder rootFolder = client.getRootFolder();
+      try {
+         Folder rootFolder = client.getRootFolder();
 
-			VirtualMachine from = (VirtualMachine) new InventoryNavigator(
-					rootFolder).searchManagedEntity("VirtualMachine", tag);
+         VirtualMachine from = (VirtualMachine) new InventoryNavigator(
+         rootFolder).searchManagedEntity("VirtualMachine", template.getImage().getId());
 
-			if (from == null) {
-				client.getServerConnection().logout();
-				return null; 
-			}
-			
-			VirtualMachineCloneSpec cloneSpec = new VirtualMachineCloneSpec();
-			VirtualMachineRelocateSpec virtualMachineRelocateSpec = new VirtualMachineRelocateSpec();
-			if (!vmwareHostName.equals("") && !datastoreName.equals("") && !resourcePoolName.equals("")) {
+         Datacenter dc = (Datacenter) new InventoryNavigator(
+                  rootFolder).searchManagedEntities("Datacenter")[0];
 
-				ResourcePool rp = (ResourcePool) new InventoryNavigator(rootFolder)
-						.searchManagedEntity("ResourcePool", resourcePoolName);
-				
-				if(rp == null)
-					throw new Exception("The resourcePool specified '" + resourcePoolName + "' doesn't exist");
-				virtualMachineRelocateSpec.setPool(rp.getMOR());
-	
-	
-				Datastore ds = (Datastore) new InventoryNavigator(rootFolder)
-					.searchManagedEntity("Datastore", datastoreName);
-				
-				HostSystem host = null;
-				host = (HostSystem) new InventoryNavigator(rootFolder)
-						.searchManagedEntity("HostSystem", vmwareHostName);
-	
-				HostDatastoreBrowser hdb = host.getDatastoreBrowser();
-	
-				if(ds == null)
-					throw new Exception("Cannot relocate this cloned machine to the specified datastore '" + datastoreName + "'");
-				Datastore dsFound = null;
-				Datastore[] dsArray = hdb.getDatastores();
-				for (Datastore d : dsArray) {
-					if(d.getName().equalsIgnoreCase(ds.getName()))
-						dsFound = d;
-				}
-				if(dsFound == null)
-					throw new Exception("Cannot relocate this cloned machine to the specified datastore '" + datastoreName + "'");
-				virtualMachineRelocateSpec.setDatastore(dsFound.getMOR());
-			}
-			
-			CustomizationSpec custSpec = new CustomizationSpec();
-		
-            CustomizationAdapterMapping cam = new CustomizationAdapterMapping();
-            CustomizationIPSettings cip = new CustomizationIPSettings();
-            cip.setIp(new CustomizationDhcpIpGenerator());
-            cam.setAdapter(cip);
-            
+         ResourcePool rp = (ResourcePool) new InventoryNavigator(rootFolder).searchManagedEntities("ResourcePool")[0];
 
-			// IP customization
-//			CustomizationAdapterMapping[] custAdapMapList = new CustomizationAdapterMapping[1];
-//			CustomizationAdapterMapping custAdapMap = new CustomizationAdapterMapping();
-//          CustomizationIPSettings custIPSettings = new CustomizationIPSettings();
-//			CustomizationFixedIp custFixedIp = new CustomizationFixedIp();
-//			custFixedIp.setIpAddress(ipAddress);
-//			custIPSettings.setIp(custFixedIp);
-//			custAdapMap.setAdapter(custIPSettings);
-//			custAdapMapList[0] = custAdapMap;
-//			custSpec.setNicSettingMap(custAdapMapList);
-			
-            CustomizationGlobalIPSettings custGlobalIPSetting = new CustomizationGlobalIPSettings();
-			
+         if (from == null) {
+            client.getServerConnection().logout();
+            return null;
+         }
 
-			CustomizationIdentitySettings custIdentitySet = new CustomizationIdentitySettings();
+//         VirtualMachineCloneSpec cloneSpec = new VirtualMachineCloneSpec();
+         VirtualMachineRelocateSpec virtualMachineRelocateSpec = new VirtualMachineRelocateSpec();
 
-			// sysprep customization
-			CustomizationSysprep custSysprep = new CustomizationSysprep();
+//         CustomizationSpec custSpec = new CustomizationSpec();
 
-			CustomizationGuiUnattended guiUnattended = new CustomizationGuiUnattended();
-			guiUnattended.setAutoLogon(false);
-			guiUnattended.setAutoLogonCount(0);
-			guiUnattended.setTimeZone(190);
-			
+/*
+         CustomizationAdapterMapping cam = new CustomizationAdapterMapping();
+         CustomizationIPSettings cip = new CustomizationIPSettings();
+         cip.setIp(new CustomizationDhcpIpGenerator());
+         cam.setAdapter(cip);
 
-			// user data
-			CustomizationPassword custPasswd = new CustomizationPassword();
-			custPasswd.setPlainText(true);
-			custPasswd.setValue("password");
+         CustomizationGlobalIPSettings custGlobalIPSetting = new CustomizationGlobalIPSettings();
 
-			CustomizationIdentification custIdentification = new CustomizationIdentification();
-			custIdentification.setDomainAdmin("Administrator");
-			custIdentification.setDomainAdminPassword(custPasswd);
-			custIdentification.setJoinWorkgroup("WORKGROUP");
 
-			CustomizationUserData custUserData = new CustomizationUserData();
-			CustomizationFixedName custFixedName = new CustomizationFixedName();
-			custFixedName.setName("mycomputer");
-			custUserData.setComputerName(custFixedName);
-			custUserData.setFullName("sjain");
-			custUserData.setOrgName("vmware");
-			custUserData.setProductId("PDRXT-M9X8G-898BR-4K427-J2FFY");
-			
-			///////
-			CustomizationWinOptions customizationWinOptions = new CustomizationWinOptions();
-			customizationWinOptions.setChangeSID(true);
-			customizationWinOptions.setDeleteAccounts(false);
-			
-			CustomizationLicenseFilePrintData custLPD = new CustomizationLicenseFilePrintData();
-	        custLPD.setAutoMode(CustomizationLicenseDataMode.perServer);
-	        
-	        custSysprep.setLicenseFilePrintData(custLPD);
+         CustomizationIdentitySettings custIdentitySet = new CustomizationIdentitySettings();
 
-			custSysprep.setUserData(custUserData);
-			custSysprep.setGuiUnattended(guiUnattended);
-			custSysprep.setIdentification(custIdentification);
-			
-			custSpec.setIdentity(custSysprep);
-			custSpec.setNicSettingMap(new CustomizationAdapterMapping[] {cam});
-			custSpec.setGlobalIPSettings(custGlobalIPSetting);
-			custSpec.setOptions(customizationWinOptions);
-			
+         // sysprep customization
+         CustomizationSysprep custSysprep = new CustomizationSysprep();
 
-			
-			cloneSpec.setCustomization(custSpec);
-           
-			 //location properties
-			 cloneSpec.setLocation(virtualMachineRelocateSpec);
-			cloneSpec.setPowerOn(false);
-			cloneSpec.setTemplate(false);
+         CustomizationGuiUnattended guiUnattended = new CustomizationGuiUnattended();
+         guiUnattended.setAutoLogon(false);
+         guiUnattended.setAutoLogonCount(0);
+         guiUnattended.setTimeZone(190);
 
-			Task task = from.cloneVM_Task((Folder) from.getParent(), vmClonedName,
-					cloneSpec);
 
-			String result = task.waitForTask();
+         // user data
+         CustomizationPassword custPasswd = new CustomizationPassword();
+         custPasswd.setPlainText(true);
+         custPasswd.setValue("password");
 
-			VirtualMachine clonedvm = (VirtualMachine) new InventoryNavigator(
-					rootFolder).searchManagedEntity("VirtualMachine", vmClonedName);
+         CustomizationIdentification custIdentification = new CustomizationIdentification();
+         custIdentification.setDomainAdmin("Administrator");
+         custIdentification.setDomainAdminPassword(custPasswd);
+         custIdentification.setJoinWorkgroup("WORKGROUP");
 
-         return new NodeAndInitialCredentials<VirtualMachine>(clonedvm, clonedvm.getGuest().guestId, null);
+         CustomizationUserData custUserData = new CustomizationUserData();
+         CustomizationFixedName custFixedName = new CustomizationFixedName();
+         custFixedName.setName("mycomputer");
+         custUserData.setComputerName(custFixedName);
+         custUserData.setFullName("sjain");
+         custUserData.setOrgName("vmware");
+         custUserData.setProductId("PDRXT-M9X8G-898BR-4K427-J2FFY");
 
-		} catch (RemoteException e) {
-			return propogate(e);
-		} catch (Exception e) {
-			return propogate(e);
-		}
-	
-	}
+         ///////
+         CustomizationWinOptions customizationWinOptions = new CustomizationWinOptions();
+         customizationWinOptions.setChangeSID(true);
+         customizationWinOptions.setDeleteAccounts(false);
 
-	@Override
-	public Iterable<VirtualMachine> listHardwareProfiles() {
-		// TODO
-		List<VirtualMachine> hardwareProfiles = Lists.newArrayList();
-		try {
-			
-			ManagedEntity[] entities = new InventoryNavigator(
-					client.getRootFolder()).searchManagedEntities("VirtualMachine");
-			for (ManagedEntity entity : entities) {
-				hardwareProfiles.add((VirtualMachine) entity);
-			}
-			return hardwareProfiles;
-		} catch (Exception e) {
-			return propogate(e);
-		}		
-	}
+         CustomizationLicenseFilePrintData custLPD = new CustomizationLicenseFilePrintData();
+         custLPD.setAutoMode(CustomizationLicenseDataMode.perServer);
 
-	@Override
-	public Iterable<Image> listImages() {
-		List<Image> images = Lists.newArrayList();
-		try {
-			
-			ManagedEntity[] entities = new InventoryNavigator(
-					client.getRootFolder()).searchManagedEntities("VirtualMachine");
-			for (ManagedEntity entity : entities) {
-				VirtualMachine vm = (VirtualMachine) entity;
-				images.add(new Image(vm.getConfig().getGuestId(), vm.getConfig().getGuestFullName()));
-			}
-			return images;
-		} catch (Exception e) {
-			return propogate(e);
-		}
-	}
+         custSysprep.setLicenseFilePrintData(custLPD);
 
-	@Override
-	public Iterable<VirtualMachine> listNodes() {
-		try {
-			ManagedEntity[] vmEntities = new InventoryNavigator(client.getRootFolder()).searchManagedEntities("VirtualMachine");
-			List<VirtualMachine> vms = Lists.newArrayList();
-			for (ManagedEntity entity : vmEntities) {
-				VirtualMachine vm = (VirtualMachine) entity;
-				vms.add(vm);
-			}
-			return vms;
-		} catch (InvalidProperty e) {
-			return propogate(e);
-		} catch (RuntimeFault e) {
-			return propogate(e);
-		} catch (RemoteException e) {
-			return propogate(e);
-		}
+         custSysprep.setUserData(custUserData);
+         custSysprep.setGuiUnattended(guiUnattended);
+         custSysprep.setIdentification(custIdentification);
 
-	}
+         custSpec.setIdentity(custSysprep);
+         custSpec.setNicSettingMap(new CustomizationAdapterMapping[] {cam});
+         custSpec.setGlobalIPSettings(custGlobalIPSetting);
+         custSpec.setOptions(customizationWinOptions);
 
-	@Override
-	public Iterable<Datacenter> listLocations() {
-		ManagedEntity[] datacenterEntities;
-		try {
-			datacenterEntities = new InventoryNavigator(client.getRootFolder()).searchManagedEntities("Datacenter");
-			List<Datacenter> datacenters = Lists.newArrayList();
-			for (int i = 0; i< datacenterEntities.length; i++) {
-				datacenters.add((Datacenter) datacenterEntities[i]);
-			}
-			return datacenters;
-		} catch (InvalidProperty e) {
-			return propogate(e);
-		} catch (RuntimeFault e) {
-			return propogate(e);
-		} catch (RemoteException e) {
-			return propogate(e);
-		}
 
-	}
 
-	@Override
-	public VirtualMachine getNode(String vmName) {
-		
-		Folder rootFolder = client.getRootFolder();
+         cloneSpec.setCustomization(custSpec);
+*/
 
-		try {
-			return (VirtualMachine) new InventoryNavigator(
-					rootFolder).searchManagedEntity("VirtualMachine", vmName);
-		} catch (InvalidProperty e) {
-			return propogate(e);
-		} catch (RuntimeFault e) {
-			return propogate(e);
-		} catch (RemoteException e) {
-			return propogate(e);
-		}
-	}
+         //location properties
+//         cloneSpec.setLocation(virtualMachineRelocateSpec);
 
-	@Override
-	public void destroyNode(String id) {
-		/*
-		try {
-			client.domainLookupByUUIDString(id).destroy();
+         VirtualMachineCloneSpec cloneSpec = new VirtualMachineCloneSpec();
+         virtualMachineRelocateSpec.setPool(rp.getMOR());
+         cloneSpec.setLocation(virtualMachineRelocateSpec);
+         cloneSpec.setPowerOn(true);
+         cloneSpec.setTemplate(false);
 
-				XMLBuilder builder = XMLBuilder.parse(new InputSource(new StringReader(
-						client.domainLookupByUUIDString(id).getXMLDesc(0)
-				)));
-				String diskFileName = builder.xpathFind("//devices/disk[@device='disk']/source").getElement().getAttribute("file");
-				StorageVol storageVol = client.storageVolLookupByPath(diskFileName);
-				storageVol.delete(0);
-				client.domainLookupByUUIDString(id).undefine();
+         Task task = from.cloneVM_Task(dc.getVmFolder(), name, cloneSpec);
 
-		} catch (LibvirtException e) {
-			propogate(e);
-		} catch (Exception e) {
-			propogate(e);
-		} 
-		*/
-	}
+         String result = task.waitForTask();
 
-	@Override
-	public void rebootNode(String id) {
-		/*
-		try {
-			client.domainLookupByUUIDString(id).reboot(0);
-		} catch (LibvirtException e) {
-			propogate(e);
-		}
-		*/
-	}
-	
-	@Override
-	public void resumeNode(String id) {
-		/*
-		try {
-			client.domainLookupByUUIDString(id).resume();
-		} catch (LibvirtException e) {
-			propogate(e);
-		}      
-		*/
-	}
+//         Thread.sleep(5000);
 
-	@Override
-	public void suspendNode(String id) {
-		/*
-		try {
-			client.domainLookupByUUIDString(id).suspend();
-		} catch (LibvirtException e) {
-			propogate(e);
-		} 
-		*/     
-	}		
+         VirtualMachine clonedvm = (VirtualMachine) new InventoryNavigator(
+         rootFolder).searchManagedEntity("VirtualMachine", name);
 
-	protected <T> T propogate(Exception e) {
-		Throwables.propagate(e);
-		assert false;
-		return null;
-	}
+         LoginCredentials login = LoginCredentials.builder()
+            .identity("root")
+            .privateKey("-----BEGIN RSA PRIVATE KEY-----\n" +
+            "MIICWgIBAAKBgQDs8TLyWWsxuTzgnDu9hsd0+c7nBhIwc4hdU1YQwjO/T95W/Qho\n" +
+            "CyWfca+nhEfpo0wjtw3NOQE6conqmpwJ32vdu0d891pu8q8VoivWOfG9+keVYeBk\n" +
+            "uoop3fzNlxl/WpnSWLrX3Ux+MrbJSpT1JfqWO2gtjBBzuMwBQO/LQhb/wQIBIwKB\n" +
+            "gQDmLCLcy+R5ch3hgdOiKygofaRrZPu6CdTs8d6T79p/VOadpViflczGxjWbao8A\n" +
+            "ODtV5QYX0PnhAY1KTQyb4Fol+/gFRb/keIZQC1poDqtuEENmTnFvzFwjxjZK77Zq\n" +
+            "qkFtIueRFKnwnE5EJMhEvct7a56DPkJJ/6pRK3nXrrmj4wJBAPkaC1icgEcFHEyR\n" +
+            "RcwXmxOEghdwyO1eqesxLjbR9Wm7ONgkB8/wTNtKVQ8u1gNt7jG5q7M3nElUoDJM\n" +
+            "hAbR9HcCQQDzgPO40r+3H7X+n2GL7W3WBTkIvpmn+dOXsdnD3pSb9ZoY5KulQ9fF\n" +
+            "lFtCthSbaF2xfEYJsrhvz5UHh7wHZ9OHAkAVWgD493i1oVoyctoYztLHKJ1vuTXL\n" +
+            "M//vloBN13tvdnKWLvla91cLe2ZgYxmohcP1ojNJ4DH3qCr8/z6EPeHBAkBTfKtV\n" +
+            "T5IwKCEkGWNF6wEWLa0nkc5IOGXNnBAl5enPEmC4E+MUF0KqJDyL5qf6xLJovOTQ\n" +
+            "IAS4nvFEaQ1EXhyjAkAIexhAfgroLlnlH/tEa2TEmvb7xkbJckWy2cbrPkiqnc+P\n" +
+            "BYigZMe3R8OfZIDvDEc+INcfj+2pvlZOQg4yd1aF\n" +
+            "-----END RSA PRIVATE KEY-----\n")
+            .build();
 
-	/*
-	private static StorageVol cloneVolume(StoragePool storagePool, StorageVol from) throws LibvirtException,
-	XPathExpressionException, ParserConfigurationException, SAXException, IOException, TransformerException {
-		return storagePool.storageVolCreateXMLFrom(generateClonedVolumeXML(from.getXMLDesc(0)), from, 0);
-	}
+         return new NodeAndInitialCredentials<VirtualMachine>(clonedvm, clonedvm.getName(), login);
 
-	private static String generateClonedVolumeXML(String fromXML) throws ParserConfigurationException, SAXException,
-	IOException, XPathExpressionException, TransformerException {
+      } catch (RemoteException e) {
+         return propogate(e);
+      } catch (Exception e) {
+         return propogate(e);
+      }
 
-		Properties outputProperties = generateOutputXMLProperties();
-		XMLBuilder builder = XMLBuilder.parse(new InputSource(new StringReader(fromXML)));
-		String nodeNamingConvention = "%s-%s";
-		String tag = "-clone";
-		String suffix = String.format(nodeNamingConvention, tag, Integer.toHexString(new SecureRandom().nextInt(4095)));
-		builder.xpathFind("//volume/name").t(suffix);
-		builder.xpathFind("//volume/key").t(suffix);
-		builder.xpathFind("//volume/target/path").t(suffix);
+   }
 
-		return builder.asString(outputProperties);
-	}
+   @Override
+   public Iterable<Hardware> listHardwareProfiles() {
+      // TODO
+      List<Hardware> hardwareProfiles = Lists.newArrayList();
+      try {
 
-	private static String generateClonedDomainXML(String fromXML, StorageVol clonedVol) throws ParserConfigurationException, SAXException,
-	IOException, XPathExpressionException, TransformerException, LibvirtException {
+         ManagedEntity[] entities = new InventoryNavigator(
+         client.getRootFolder()).searchManagedEntities("VirtualMachine");
+         for (ManagedEntity entity : entities) {
+            VirtualMachine vm = (VirtualMachine) entity;
+            if (vm.getConfig().isTemplate()) {
+               hardwareProfiles.add(vmToHardware.apply(vm));
+            }
+         }
 
-		Properties outputProperties = generateOutputXMLProperties();
+         return hardwareProfiles;
+      } catch (Exception e) {
+         return propogate(e);
+      }
+   }
 
-		XMLBuilder builder = XMLBuilder.parse(new InputSource(new StringReader(fromXML)));
+   @Override
+   public Iterable<Image> listImages() {
+      List<Image> images = Lists.newArrayList();
+      try {
 
-		String nodeNamingConvention = "%s-%s";
-		String tag = "-clone";
-		String suffix = String.format(nodeNamingConvention, tag, Integer.toHexString(new SecureRandom().nextInt(4095)));
-		builder.xpathFind("//domain/name").t(suffix);
-		// change uuid domain
-		Element oldChild = builder.xpathFind("//domain/uuid").getElement();
-		Node newNode = oldChild.cloneNode(true);
-		newNode.getFirstChild().setNodeValue(UUID.randomUUID().toString());
-		builder.getDocument().getDocumentElement().replaceChild(newNode, oldChild);
+         ManagedEntity[] entities = new InventoryNavigator(
+         client.getRootFolder()).searchManagedEntities("VirtualMachine");
 
-		//String fromVolPath = builder.xpathFind("//domain/devices/disk/source").getElement().getAttribute("file");
-		builder.xpathFind("//domain/devices/disk/source").a("file", clonedVol.getPath());
-		// generate valid MAC address
-		String fromMACaddress = builder.xpathFind("//domain/devices/interface/mac").getElement().getAttribute("address");
-		String lastMACoctet = Integer.toHexString(new SecureRandom().nextInt(255));			
-		builder.xpathFind("//domain/devices/interface/mac").a("address", 
-				fromMACaddress.substring(0, fromMACaddress.lastIndexOf(":")+1) + lastMACoctet
-		);
-		return builder.asString(outputProperties);
-	}
-	
-	private static Properties generateOutputXMLProperties() {
-		Properties outputProperties = new Properties();
-		// Explicitly identify the output as an XML document
-		outputProperties.put(javax.xml.transform.OutputKeys.METHOD, "xml");
-		// Pretty-print the XML output (doesn't work in all cases)
-		outputProperties.put(javax.xml.transform.OutputKeys.INDENT, "yes");
-		// Get 2-space indenting when using the Apache transformer
-		outputProperties.put("{http://xml.apache.org/xslt}indent-amount", "2");
-		return outputProperties;
-	}
-	*/
+         for (ManagedEntity entity : entities) {
+            VirtualMachine vm = (VirtualMachine) entity;
+            if (vm.getConfig().isTemplate()) {
+               images.add(vmToImage.apply(vm));
+            }
+         }
+
+
+         return images;
+      } catch (Exception e) {
+         return propogate(e);
+      }
+   }
+
+   @Override
+   public Iterable<VirtualMachine> listNodes() {
+      try {
+         ManagedEntity[] vmEntities = new InventoryNavigator(client.getRootFolder()).searchManagedEntities("VirtualMachine");
+         List<VirtualMachine> vms = Lists.newArrayList();
+         for (ManagedEntity entity : vmEntities) {
+            VirtualMachine vm = (VirtualMachine) entity;
+            if (!vm.getConfig().isTemplate()) {
+               vms.add(vm);
+            }
+         }
+         return vms;
+      } catch (InvalidProperty e) {
+         return propogate(e);
+      } catch (RuntimeFault e) {
+         return propogate(e);
+      } catch (RemoteException e) {
+         return propogate(e);
+      }
+
+   }
+
+   @Override
+   public Iterable<Datacenter> listLocations() {
+      ManagedEntity[] datacenterEntities;
+      try {
+         datacenterEntities = new InventoryNavigator(client.getRootFolder()).searchManagedEntities("Datacenter");
+         List<Datacenter> datacenters = Lists.newArrayList();
+         for (int i = 0; i< datacenterEntities.length; i++) {
+            datacenters.add((Datacenter) datacenterEntities[i]);
+         }
+         return datacenters;
+      } catch (InvalidProperty e) {
+         return propogate(e);
+      } catch (RuntimeFault e) {
+         return propogate(e);
+      } catch (RemoteException e) {
+         return propogate(e);
+      }
+
+   }
+
+   @Override
+   public VirtualMachine getNode(String vmName) {
+
+      Folder rootFolder = client.getRootFolder();
+
+      try {
+         return (VirtualMachine) new InventoryNavigator(
+         rootFolder).searchManagedEntity("VirtualMachine", vmName);
+      } catch (InvalidProperty e) {
+         return propogate(e);
+      } catch (RuntimeFault e) {
+         return propogate(e);
+      } catch (RemoteException e) {
+         return propogate(e);
+      }
+   }
+
+   @Override
+   public void destroyNode(String id) {
+      /*
+        try {
+           client.domainLookupByUUIDString(id).destroy();
+
+              XMLBuilder builder = XMLBuilder.parse(new InputSource(new StringReader(
+                    client.domainLookupByUUIDString(id).getXMLDesc(0)
+              )));
+              String diskFileName = builder.xpathFind("//devices/disk[@device='disk']/source").getElement().getAttribute("file");
+              StorageVol storageVol = client.storageVolLookupByPath(diskFileName);
+              storageVol.delete(0);
+              client.domainLookupByUUIDString(id).undefine();
+
+        } catch (LibvirtException e) {
+           propogate(e);
+        } catch (Exception e) {
+           propogate(e);
+        }
+        */
+   }
+
+   @Override
+   public void rebootNode(String id) {
+      /*
+        try {
+           client.domainLookupByUUIDString(id).reboot(0);
+        } catch (LibvirtException e) {
+           propogate(e);
+        }
+        */
+   }
+
+   @Override
+   public void resumeNode(String id) {
+      /*
+        try {
+           client.domainLookupByUUIDString(id).resume();
+        } catch (LibvirtException e) {
+           propogate(e);
+        }
+        */
+   }
+
+   @Override
+   public void suspendNode(String id) {
+      /*
+        try {
+           client.domainLookupByUUIDString(id).suspend();
+        } catch (LibvirtException e) {
+           propogate(e);
+        }
+        */
+   }
+
+   protected <T> T propogate(Exception e) {
+      Throwables.propagate(e);
+      assert false;
+      return null;
+   }
+
+   /*
+    private static StorageVol cloneVolume(StoragePool storagePool, StorageVol from) throws LibvirtException,
+    XPathExpressionException, ParserConfigurationException, SAXException, IOException, TransformerException {
+       return storagePool.storageVolCreateXMLFrom(generateClonedVolumeXML(from.getXMLDesc(0)), from, 0);
+    }
+
+    private static String generateClonedVolumeXML(String fromXML) throws ParserConfigurationException, SAXException,
+    IOException, XPathExpressionException, TransformerException {
+
+       Properties outputProperties = generateOutputXMLProperties();
+       XMLBuilder builder = XMLBuilder.parse(new InputSource(new StringReader(fromXML)));
+       String nodeNamingConvention = "%s-%s";
+       String tag = "-clone";
+       String suffix = String.format(nodeNamingConvention, tag, Integer.toHexString(new SecureRandom().nextInt(4095)));
+       builder.xpathFind("//volume/name").t(suffix);
+       builder.xpathFind("//volume/key").t(suffix);
+       builder.xpathFind("//volume/target/path").t(suffix);
+
+       return builder.asString(outputProperties);
+    }
+
+    private static String generateClonedDomainXML(String fromXML, StorageVol clonedVol) throws ParserConfigurationException, SAXException,
+    IOException, XPathExpressionException, TransformerException, LibvirtException {
+
+       Properties outputProperties = generateOutputXMLProperties();
+
+       XMLBuilder builder = XMLBuilder.parse(new InputSource(new StringReader(fromXML)));
+
+       String nodeNamingConvention = "%s-%s";
+       String tag = "-clone";
+       String suffix = String.format(nodeNamingConvention, tag, Integer.toHexString(new SecureRandom().nextInt(4095)));
+       builder.xpathFind("//domain/name").t(suffix);
+       // change uuid domain
+       Element oldChild = builder.xpathFind("//domain/uuid").getElement();
+       Node newNode = oldChild.cloneNode(true);
+       newNode.getFirstChild().setNodeValue(UUID.randomUUID().toString());
+       builder.getDocument().getDocumentElement().replaceChild(newNode, oldChild);
+
+       //String fromVolPath = builder.xpathFind("//domain/devices/disk/source").getElement().getAttribute("file");
+       builder.xpathFind("//domain/devices/disk/source").a("file", clonedVol.getPath());
+       // generate valid MAC address
+       String fromMACaddress = builder.xpathFind("//domain/devices/interface/mac").getElement().getAttribute("address");
+       String lastMACoctet = Integer.toHexString(new SecureRandom().nextInt(255));
+       builder.xpathFind("//domain/devices/interface/mac").a("address",
+             fromMACaddress.substring(0, fromMACaddress.lastIndexOf(":")+1) + lastMACoctet
+       );
+       return builder.asString(outputProperties);
+    }
+
+    private static Properties generateOutputXMLProperties() {
+       Properties outputProperties = new Properties();
+       // Explicitly identify the output as an XML document
+       outputProperties.put(javax.xml.transform.OutputKeys.METHOD, "xml");
+       // Pretty-print the XML output (doesn't work in all cases)
+       outputProperties.put(javax.xml.transform.OutputKeys.INDENT, "yes");
+       // Get 2-space indenting when using the Apache transformer
+       outputProperties.put("{http://xml.apache.org/xslt}indent-amount", "2");
+       return outputProperties;
+    }
+    */
 }
